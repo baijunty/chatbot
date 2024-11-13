@@ -8,16 +8,9 @@ from nonebot.adapters.onebot.v11 import PrivateMessageEvent,MessageSegment
 from nonebot.rule import Rule, to_me
 from nonebot.permission import SUPERUSER
 from .common import plugin_config, is_enable, http_invoke
-from nonebot.params import Depends
-class PrivateChat:
-    def __init__(self):
-        pass
-
-    async def __call__(self) -> bool:
-        return Depends(private_check)
 
 async def private_check(event: Event) -> bool:
-    return isinstance(event, PrivateMessageEvent)
+    return isinstance(event, PrivateMessageEvent) and is_enable()
 
 
 weather = on_command(
@@ -93,8 +86,7 @@ async def got_weather(location: str = ArgPlainText()):
     if data and any(key == 'location' for key in data.keys()):
         weather_location = await http_invoke('https://devapi.qweather.com/v7/weather/now', headers={'Content-Type': 'application/json'},
                                              params={'key': plugin_config.assistant_plugin_weather_api_key, 'location': data["location"][0]["id"]}, method='GET')
-        resp = await http_invoke('http://192.168.1.107:11434/api/chat', data=json.dumps({"model": plugin_config.assistant_chat_model, "messages": [
-            {'role': 'system', 'content': f'根据以下json内容,总结城市或地区"{location}"的天气\n:{weather_location['now']}'}], "stream": False}))
+        resp = await plugin_config.llm.chat([{'role': 'system', 'content': f'根据以下json内容,总结城市或地区"{location}"的天气\n:{weather_location['now']}'}])
         return await weather.finish(resp['message']['content'])
     else:
         return await weather.finish("未找到该地名。")

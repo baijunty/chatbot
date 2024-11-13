@@ -1,4 +1,10 @@
-```markdown
+Metadata-Version: 2.1
+Name: chatbot
+Version: 0.1.0
+Summary: chatbot
+Requires-Python: <4.0,>=3.9
+Description-Content-Type: text/markdown
+
 # chatbot
 
 ## 介绍
@@ -15,26 +21,3 @@
    ```bash
    git clone <your-repo-url>
    cd chatbot
-   ```
-3. 安装依赖：
-   ```bash
-   pip install -e .
-   ```
-
-## 配置
-1. 根据需要修改`pyproject.toml`文件中的适配器和插件配置。
-2. 在NoneBot的配置文件中添加或修改超级用户列表。
-
-## 使用
-启动机器人后，它将根据自定义规则处理消息，并使用LLM功能进行智能回复。
-
-```bash
-nonebot run
-```
-
-## 贡献
-欢迎贡献代码！请在提交PR前确保遵循项目的编码规范和测试用例。
-
-## 许可证
-本项目采用MIT许可证。
-```

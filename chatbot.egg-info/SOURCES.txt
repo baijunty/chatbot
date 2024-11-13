@@ -1,0 +1,13 @@
+README.md
+pyproject.toml
+chatbot.egg-info/PKG-INFO
+chatbot.egg-info/SOURCES.txt
+chatbot.egg-info/dependency_links.txt
+chatbot.egg-info/top_level.txt
+plugins/assistant/__init__.py
+plugins/assistant/assistant.py
+plugins/assistant/common.py
+plugins/assistant/config.py
+plugins/assistant/free_chat.py
+plugins/assistant/html_parser.py
+plugins/assistant/llm.py
