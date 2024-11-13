@@ -1,4 +1,3 @@
-```markdown
 # chatbot
 
 ## 介绍
@@ -13,7 +12,7 @@
 1. 确保你已经安装了Python 3.9或更高版本。
 2. 克隆项目到本地：
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/baijunty/chatbot
    cd chatbot
    ```
 3. 安装依赖：
@@ -29,12 +28,31 @@
 启动机器人后，它将根据自定义规则处理消息，并使用LLM功能进行智能回复。
 
 ```bash
-nonebot run
+nb run --relaod
 ```
 
 ## 贡献
 欢迎贡献代码！请在提交PR前确保遵循项目的编码规范和测试用例。
 
 ## 许可证
-本项目采用MIT许可证。
-```
+MIT License
+
+Copyright (c) [2024] [baijunty]
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
