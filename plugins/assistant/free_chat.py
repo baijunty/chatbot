@@ -252,8 +252,9 @@ async def analysis_message_to_chat(history: list,images, reference, request, url
     result_reference=''
     result_urls=set()
     if results and len(results['documents'])>0:
-        for document in results['documents']:
-            result_reference+=' '.join(document) + '\n'
+        metadatas= results['metadatas']
+        for distances,document in zip(results['distances'],results['documents']):
+            result_reference+=' '.join([text for distance,text in zip(distances,document) if distance>0.5]) + '\n'
         if results['metadatas']:
             for metadatas in results['metadatas']:
                 result_urls.update([data['url'] for data in metadatas if data and data.get('url')])
