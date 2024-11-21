@@ -56,7 +56,7 @@ async def merge_msg(bot: Bot, matcher: Matcher,message: Message):
 
 @free_chat.handle()
 async def handle_group_message(bot: Bot, matcher: Matcher, event: GroupMessageEvent):
-    args = event.get_message()
+    args = event.original_message
     key = f'{event.get_session_id()}_history'
     state = matcher.state
     history = state.get(key, [])
@@ -112,7 +112,6 @@ async def handle_private_message(bot: Bot, matcher: Matcher, event: PrivateMessa
         if args.extract_plain_text().strip() == 'gg':
             await matcher.finish('已退出聊天')
             return
-        last = matcher.get_receive('summary_last_receive', default=None)
         await matcher.send('正在思考回答')
         images,reference,request,urls = await merge_msg(bot, matcher,args)
         resp = await analysis_message_to_chat(history,images, reference,request, urls,collection=collection)
@@ -167,11 +166,6 @@ async def get_content_from_msg(bot: Bot, message: Message):
     return images, reference, request, urls
 
 
-async def embeding_text(text: str) -> list:
-    data = await plugin_config.llm.embeddings(text)
-    return data['embeddings'][0]
-
-
 async def get_html_body(url: str):
     try:
         data = await http_invoke(url, method='GET')
@@ -214,16 +208,11 @@ async def search_from_net(query: str, collection:Collection, threshold=0.5):
 
 
 async def get_similar_from_urls(query:str,results: list, collection:Collection, threshold=0.5):
-    query_embedding = await embeding_text(query)
     for result in results:
         text = result['content']
-        text_embedding = await embeding_text(text)
-        import numpy as np
-        from numpy.linalg import norm
-        similarities = np.dot(query_embedding, text_embedding)/(norm(query_embedding)*norm(text_embedding))
-        if similarities > threshold:
-            collection.add(ids=hashlib.md5(text.encode()).hexdigest(), documents=[text], metadatas={'url':result['url']})
-            await split_to_embeding_text(result['url'], collection)
+        collection.add(ids=hashlib.md5(text.encode()).hexdigest(), documents=[
+                       text], metadatas={'url': result['url']})
+        await split_to_embeding_text(result['url'], collection)
 
 def contains_image(history:list,images:list):
     return any([msg.get('images') for msg in history]) or len(images) > 0 
@@ -234,36 +223,35 @@ async def analysis_message_to_chat(history: list,images, reference, request, url
             await split_to_embeding_text(url, collection) 
     contains_image_flag = contains_image(history, images)
     reference = reference.strip()
-    if (len(history) > 0 or len(reference)>0) and not contains_image_flag:
-        data = await chat_to_llm(plugin_config.assistant_chat_model, [{'role': 'system',
-         'content': RE_GENERATE_TITLE.format('\n'.join([f'{msg['role']}:{msg['content']}' for msg in history[-4:]]),request)},{'role':'user','content':'重新表述的问题:'}])
-        request =data['message']['content']
     logger('INFO',f"reference: {reference} request {request} urls {urls} images {len(images)}")
     if len(reference)>0:
         collection.add(hashlib.md5(reference.encode()).hexdigest(), documents=[reference])
     if not plugin_config.assistant_chat_model:
         return f'尚未设置聊天模型'
-    search = await classify_macher(query=request, categories=['需要联网搜索', '其他']) if len(urls) == 0 and not contains_image_flag else ''
+    search = await classify_macher(query=request, categories=['需要联网搜索', '其他']) if len(urls) == 0 and not contains_image_flag and len(reference)==0 else ''
+    result_urls=set()
     if '需要联网搜索' in search:
+        if (len(history) > 0 or len(reference)>0) and not contains_image_flag:
+            data = await chat_to_llm(plugin_config.assistant_chat_model, [{'role': 'system','content': RE_GENERATE_TITLE.format('\n'.join([f'{msg['role']}:{msg['content']}' for msg in history[-4:]]),request)},{'role':'user','content':'重新表述的问题:'}])
+            request =data['message']['content']
         if not plugin_config.assistant_embeddings_model:
             return '尚未设置向量嵌入模型'
         await search_from_net(request, collection, 0.5)
-    results=collection.query(query_texts=request,n_results=10)
-    result_reference=''
-    result_urls=set()
-    if results and len(results['documents'])>0:
-        metadatas= results['metadatas']
-        for distances,document in zip(results['distances'],results['documents']):
-            result_reference+=' '.join([text for distance,text in zip(distances,document) if distance>0.5]) + '\n'
-        if results['metadatas']:
-            for metadatas in results['metadatas']:
-                result_urls.update([data['url'] for data in metadatas if data and data.get('url')])
-    if len(history)==0 and len(result_reference.strip())>0:
-        import datetime
-        history.append({'role':'system','content':SEARCH_SYSTEM.format(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),result_reference)})
-        history.append({'role': 'user', 'content': request, "images": images if contains_image_flag else None})
+        results=collection.query(query_texts=request,n_results=10)
+        result_reference=''
+        if results and len(results['documents'])>0:
+            metadatas= results['metadatas']
+            for distances,document in zip(results['distances'],results['documents']):
+                result_reference+=' '.join([text for distance,text in zip(distances,document) if distance>0.5]) + '\n'
+            if results['metadatas']:
+                for metadatas in results['metadatas']:
+                    result_urls.update([data['url'] for data in metadatas if data and data.get('url')])
+        if len(result_reference.strip())>0:
+            import datetime
+            history.append({'role':'system','content':SEARCH_SYSTEM.format(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),result_reference)})
+            history.append({'role': 'user', 'content': request, "images": images if contains_image_flag else None})
     else:
-        history.append({'role': 'user', 'content': f'{result_reference if result_reference else reference}\n{request}', "images": images if contains_image_flag else None})
+        history.append({'role': 'user', 'content': f'{reference}\n{request}', "images": images if contains_image_flag else None})
     logger('INFO',f"reference: {reference} request {request} urls {urls} images {len(images)}")
     model = plugin_config.assistant_image_model if  contains_image_flag else plugin_config.assistant_chat_model
     if not model:
