@@ -161,9 +161,9 @@ async def get_content_from_msg(bot: Bot, message: Message,collection: Collection
     urls = []
     import re
     for msg in message:
+        logger('INFO', f"msg:{msg}")
         msg_type = msg.type if isinstance(msg, MessageSegment) else msg['type']
         msg_data = msg.data if isinstance(msg, MessageSegment) else msg['data']
-        logger('INFO', f"msg_type:{msg_type} msg_data:{msg_data}")
         if msg_type == "image":
             data = await http_invoke(msg_data['url'], method='GET')
             if data is None:
@@ -178,10 +178,12 @@ async def get_content_from_msg(bot: Bot, message: Message,collection: Collection
             reference += f'{reply[1]}\n{reply[2]}\n'
         elif msg_type == "forward" and msg_data['id'] not in [0, '', '0']:
             forward_msg = await bot.get_forward_msg(id=msg_data['id'])
-            forward = await get_content_from_msg(bot, forward_msg['message'],collection)
-            images.extend(forward[0])
-            urls.extend(forward[3])
-            reference += f'{forward[1]}\n{forward[2]}\n'
+            logger('INFO', f"forward_msg:{forward_msg}")
+            for sub_msg in forward_msg['messages']:
+                forward = await get_content_from_msg(bot, sub_msg['message'],collection)
+                images.extend(forward[0])
+                urls.extend(forward[3])
+                reference += f'{forward[1]}\n{forward[2]}\n'
         elif msg_type == "node":
             content = await get_content_from_msg(bot, msg_data['content'],collection)
             images.extend(content[0])
