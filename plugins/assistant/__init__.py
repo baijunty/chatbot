@@ -1,7 +1,7 @@
 from nonebot.plugin import PluginMetadata
 from .config import Config
-from nonebot.utils import logger_wrapper
-logger=logger_wrapper('assistant')
+from nonebot import logger
+logger=logger
 from . import free_chat,assistant
 __plugin_meta__ = PluginMetadata(
     name="assistant",

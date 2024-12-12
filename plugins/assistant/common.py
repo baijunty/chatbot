@@ -95,7 +95,7 @@ async def http_invoke(url, params=None, headers=None, data=None, method='POST'):
     async with ClientSession() as session:
         async with session.request(method, url, headers=default_headers, data=data, params=params, proxy="http://127.0.0.1:8389") as response:
             if not response.ok:
-                logger('ERROR',f'{url} response {response}')
+                logger.error('ERROR',f'{url} response {response}')
                 return None
             content_type = response.headers['Content-Type']
             if content_type.startswith('application/json'):

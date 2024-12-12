@@ -18,9 +18,9 @@ URL_REGEX = r'https?:\/\/[a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}\/?[\w\-@%&=\?\.~:\/?#]*'
 
 async def custom_rule(bot: Bot, event: Event) -> bool:
     user_id = event.get_user_id()
-    logger('INFO', f"User {user_id} is checking the {event.get_message()}.")
+    logger.debug('INFO', f"User {user_id} is checking the {event.get_message()}.")
     if event is PrivateMessageEvent:
-        logger('INFO', f"私聊消息：{user_id} in {user_id in bot.config.superusers} or {
+        logger.debug('INFO', f"私聊消息：{user_id} in {user_id in bot.config.superusers} or {
                f"{bot.adapter.get_name().split(maxsplit=1)[0].lower()}:{user_id}" in bot.config.superusers}")
         return f"{bot.adapter.get_name().split(maxsplit=1)[0].lower()}:{user_id}" in bot.config.superusers or user_id in bot.config.superusers
     return event.is_tome() or any(msg.type == 'at' and msg.data['qq'] == bot.self_id for msg in event.get_message())
@@ -111,7 +111,7 @@ async def handle_private_message(bot: Bot, matcher: Matcher, event: PrivateMessa
     state = matcher.state
     history = state.get(key, [])
     collection = state.get('chat_embeddings', None)
-    logger('INFO', f'{args} length: {len(history)}')
+    logger.debug('INFO', f'{args} length: {len(history)}')
     if not collection:
         collection = create_or_recreate_collection(
             f"chat_history_{event.get_session_id()}")
@@ -161,7 +161,7 @@ async def get_content_from_msg(bot: Bot, message: Message,collection: Collection
     urls = []
     import re
     for msg in message:
-        logger('INFO', f"msg:{msg}")
+        logger.debug('INFO', f"msg:{msg}")
         msg_type = msg.type if isinstance(msg, MessageSegment) else msg['type']
         msg_data = msg.data if isinstance(msg, MessageSegment) else msg['data']
         if msg_type == "image":
@@ -178,7 +178,7 @@ async def get_content_from_msg(bot: Bot, message: Message,collection: Collection
             reference += f'{reply[1]}\n{reply[2]}\n'
         elif msg_type == "forward" and msg_data['id'] not in [0, '', '0']:
             forward_msg = await bot.get_forward_msg(id=msg_data['id'])
-            logger('INFO', f"forward_msg:{forward_msg}")
+            logger.debug('INFO', f"forward_msg:{forward_msg}")
             for sub_msg in forward_msg['messages']:
                 forward = await get_content_from_msg(bot, sub_msg['message'],collection)
                 images.extend(forward[0])
@@ -233,18 +233,18 @@ async def search_from_net(query: str, collection: Collection):
     data = await http_invoke('https://baijunty.com/search', params={
         'q': query, 'format': 'json', 'language': 'all', 'image_proxy': 0, 'time_range': '', 'safesearch': 0, 'categories': 'general'}, method='GET')
     if not data:
-        logger('ERROR', f'failed to get search {query}')
+        logger.error('ERROR', f'failed to get search {query}')
         return []
-    results = [r for r in data['results'][:6]]
-    logger('INFO', f'search {query} found {results}')
-    await get_similar_from_urls(query, results, collection)
+    results = [r for r in data['results'][:6] if r['content']]
+    logger.debug('INFO', f'search {query} found {results}')
+    await get_similar_from_urls(results, collection)
 
 
-async def get_similar_from_urls(query: str, results: list, collection: Collection):
+async def get_similar_from_urls(results: list, collection: Collection):
     for result in results:
         text = result['content']
         url = result['url']
-        logger('INFO', f'get similar from {url} content {text}')
+        logger.debug('INFO', f'get similar from {url} content {text}')
         collection.add(ids=hashlib.md5(text.encode()).hexdigest(), documents=[text], metadatas={'url': url})
         html = await get_html_body(url)
         if html:
@@ -263,7 +263,7 @@ async def analysis_message_to_chat(history: list, images, reference, request, ur
                 split_to_embeding_text(html, collection,url)
     contains_image_flag = contains_image(history, images)
     reference = reference.strip()
-    logger('INFO', f"reference: {reference} request {request} urls {urls} images {len(images)}")
+    logger.debug('INFO', f"reference: {reference} request {request} urls {urls} images {len(images)}")
     if not plugin_config.assistant_chat_model:
         return f'尚未设置聊天模型'
     search = await classify_macher(query=request, categories=['需要联网搜索', '其他']) if len(urls) == 0 and not contains_image_flag and len(reference) == 0 else ''
@@ -291,7 +291,7 @@ async def analysis_message_to_chat(history: list, images, reference, request, ur
         history.append({'role': 'user', 'content': request,"images": images if contains_image_flag else None})
     else:
         history.append({'role': 'user', 'content': f'{reference}\n{request}', "images": images if contains_image_flag else None})
-    logger('INFO', f"reference: {reference} request {request} urls {urls} images {len(images)}")
+    logger.debug('INFO', f"reference: {reference} request {request} urls {urls} images {len(images)}")
     model = plugin_config.assistant_image_model if contains_image_flag else plugin_config.assistant_chat_model
     if not model:
         return f'尚未设置{"聊天" if contains_image_flag else "图像"}模型'
@@ -305,5 +305,5 @@ async def analysis_message_to_chat(history: list, images, reference, request, ur
 
 async def chat_to_llm(model: str, message: list):
     resp = await plugin_config.llm.chat(message=message, model=model)
-    logger('INFO', f'resp {resp}')
+    logger.debug('INFO', f'resp {resp}')
     return resp
