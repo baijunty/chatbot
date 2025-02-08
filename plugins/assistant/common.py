@@ -45,16 +45,7 @@ Remote Work Productivity Tips
 Artificial Intelligence in Healthcare
 Video Game Development Insights"""
 
-SEARCH_SYSTEM ="""You are an AI model who is expert at searching the web and answering user's queries.
-
-Generate a response that is informative and relevant to the user's query based on provided search results. the current date and time are {}.
-`no need to state the source of the information`
-If you don't know the answer, just say you don't know. DO NOT try to make up an answer. If the question is not related to the context, 
-politely respond that you are tuned to only answer questions that are related to the context。
-`search-results` block provides knowledge from the web search results. You can use this information to generate a meaningful response.
-<search-results>
- {}
-</search-results>"""
+SEARCH_SYSTEM ="""现在的日期是{},下面是互联网搜索结果的内容，然后根据用户的查询生成回答。{}"""
 
 RE_GENERATE_TITLE = """您将提出一个后续问题。如果需要，您需要重新表述后续问题，以便它是一个独立问题，不超过30字,可供 AI 模型用来搜索互联网。
 
@@ -95,7 +86,7 @@ async def http_invoke(url, params=None, headers=None, data=None, method='POST'):
     async with ClientSession() as session:
         async with session.request(method, url, headers=default_headers, data=data, params=params, proxy="http://127.0.0.1:8389") as response:
             if not response.ok:
-                logger.error('ERROR',f'{url} response {response}')
+                logger.error('ERROR',f'{url} response {await response.text()}')
                 return None
             content_type = response.headers['Content-Type']
             if content_type.startswith('application/json'):

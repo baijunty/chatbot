@@ -1,24 +1,27 @@
 import hashlib
 import json
-import jieba
-from nonebot.rule import Rule
-from nonebot import on_message
-from nonebot.matcher import Matcher
-from nonebot.adapters.onebot.v11 import (
-    Bot, GroupMessageEvent, PrivateMessageEvent, Event, Message, MessageSegment)
-from .common import *
-from chromadb import Client, Collection
-from chromadb.utils.embedding_functions.ollama_embedding_function import OllamaEmbeddingFunction
-from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
-from .html_parser import HtmlParser
 from uuid import uuid4
+
+from chromadb import Client, Collection
+from chromadb.utils.embedding_functions import DefaultEmbeddingFunction
+from chromadb.utils.embedding_functions.ollama_embedding_function import \
+    OllamaEmbeddingFunction
+from nonebot import on_message
+from nonebot.adapters.onebot.v11 import (Bot, Event, GroupMessageEvent,
+                                         Message, MessageSegment,
+                                         PrivateMessageEvent)
+from nonebot.matcher import Matcher
+from nonebot.rule import Rule
+
 from . import logger
+from .common import *
+from .html_parser import HtmlParser
+
 URL_REGEX = r'https?:\/\/[a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}\/?[\w\-@%&=\?\.~:\/?#]*'
 
 
 async def custom_rule(bot: Bot, event: Event) -> bool:
     user_id = event.get_user_id()
-    logger.debug('INFO', f"User {user_id} is checking the {event.get_message()}.")
     if event is PrivateMessageEvent:
         logger.debug('INFO', f"私聊消息：{user_id} in {user_id in bot.config.superusers} or {
                f"{bot.adapter.get_name().split(maxsplit=1)[0].lower()}:{user_id}" in bot.config.superusers}")
@@ -33,6 +36,18 @@ embeding = OllamaEmbeddingFunction(f'{plugin_config.assistant_llm_base_url}/api/
 
 
 def create_or_recreate_collection(collection_name: str) -> Collection:
+    """Creates a new Chroma collection, ensuring it is empty.
+    
+    If a collection with the specified name already exists and contains documents,
+    it is deleted before creating a new empty collection. This guarantees the
+    returned collection is always fresh and empty.
+
+    Args:
+        collection_name: Name of the Chroma collection to create/recreate
+
+    Returns:
+        Collection: A newly created Chroma collection instance with the specified name
+    """
     collection = client.get_or_create_collection(
         collection_name, embedding_function=embeding)
     if collection.count() > 0:
@@ -41,6 +56,20 @@ def create_or_recreate_collection(collection_name: str) -> Collection:
 
 
 async def merge_msg(bot: Bot, matcher: Matcher, message: Message,collection: Collection):
+    """Merges messages for further processing by the bot.
+    
+    This function retrieves the last received message from the matcher and extracts its content, images, reference text, and URLs. 
+    It then appends the current incoming message's content, images, reference text, and URLs to this data.
+    
+    Args:
+        bot (Bot): The Bot instance representing the bot.
+        matcher (Matcher): The Matcher instance that holds the conversation state.
+        message (Message): The incoming Message object from the user.
+        collection (Collection): A ChromaDB Collection instance used for storing and retrieving embeddings.
+        
+    Returns:
+        Tuple[List[str], str, str, List[str]]: A tuple containing lists of images, a concatenated string of reference text, a concatenated string of request text, and a list of URLs from the merged messages.
+    """
     last = matcher.get_receive('summary_last_receive', default=None)
     images = []
     reference = ''
@@ -79,7 +108,9 @@ async def handle_group_message(bot: Bot, matcher: Matcher, event: GroupMessageEv
             return
         await matcher.send([* reply, '正在思考回答'])
         images, reference, request, urls = await merge_msg(bot, matcher, args,collection)
-        resp = await analysis_message_to_chat(history, images, reference, request, urls, collection=collection)
+        resp,ref = await analysis_message_to_chat(history, images, reference, request, urls, collection=collection)
+        if ref:
+            await free_chat.send(MessageSegment.node_custom(bot.self_id,'reference', ref))
         reply.append(MessageSegment.text(resp))
         state[key] = history
         state['chat_embeddings_client'] = client
@@ -122,8 +153,9 @@ async def handle_private_message(bot: Bot, matcher: Matcher, event: PrivateMessa
             return
         await matcher.send('正在思考回答')
         images, reference, request, urls = await merge_msg(bot, matcher, args,collection)
-        resp = await analysis_message_to_chat(history, images, reference, request, urls, collection=collection)
-        # logger.info(f"history: {[his['content'] for his in history]}")
+        resp,ref = await analysis_message_to_chat(history, images, reference, request, urls, collection=collection)
+        if ref:
+            await free_chat.send(MessageSegment.node_custom(bot.self_id,'reference', ref))
         state[key] = history
         state['chat_embeddings_client'] = client
         await free_chat.reject(resp)
@@ -136,13 +168,13 @@ async def get_file_content(msg_data: dict,collection: Collection):
     images = []
     reference = msg_data['file']
     file_size = int(msg_data['file_size'],10)
-    resp = await http_invoke(f'http://192.168.1.107:6000/get_file', data=json.dumps({'file_id': msg_data['file_id']})) if file_size> 0 and file_size < 1024 * 1024*10 else ''
+    resp = await http_invoke('http://192.168.1.107:6000/get_file', data=json.dumps({'file_id': msg_data['file_id']})) if file_size> 0 and file_size < 1024 * 1024*10 else ''
     import base64
     if resp and os.path.splitext(msg_data['file'])[-1] in ['.pdf', '.doc', '.docx', '.txt', '.json', '.csv']:
         b64 = resp['data']['base64']
         try:
             reference = base64.b64decode(b64).decode('utf-8')
-        except UnicodeDecodeError as e:
+        except UnicodeDecodeError:
             reference = base64.b64decode(b64).decode('gb2312')
     elif resp and os.path.splitext(msg_data['file'])[-1] in ['.jpg', '.png', '.jpeg', '.gif']:
         b64 = resp['data']['base64']
@@ -161,9 +193,9 @@ async def get_content_from_msg(bot: Bot, message: Message,collection: Collection
     urls = []
     import re
     for msg in message:
-        logger.debug('INFO', f"msg:{msg}")
         msg_type = msg.type if isinstance(msg, MessageSegment) else msg['type']
         msg_data = msg.data if isinstance(msg, MessageSegment) else msg['data']
+        logger.debug(f"INFO {msg}")
         if msg_type == "image":
             data = await http_invoke(msg_data['url'], method='GET')
             if data is None:
@@ -230,7 +262,7 @@ def split_to_embeding_text(lines, collection: Collection,url=None):
 
 
 async def search_from_net(query: str, collection: Collection):
-    data = await http_invoke('https://baijunty.com/search', params={
+    data = await http_invoke('https://ayaya.lol/search', params={
         'q': query, 'format': 'json', 'language': 'all', 'image_proxy': 0, 'time_range': '', 'safesearch': 0, 'categories': 'general'}, method='GET')
     if not data:
         logger.error('ERROR', f'failed to get search {query}')
@@ -255,7 +287,7 @@ def contains_image(history: list, images: list):
     return any([msg.get('images') for msg in history]) or len(images) > 0
 
 
-async def analysis_message_to_chat(history: list, images, reference, request, urls, collection: Collection):
+async def analysis_message_to_chat(history: list, images, reference, request, urls, collection: Collection) :
     if len(urls) > 0:
         for url in urls:
             html = await get_html_body(url)
@@ -277,18 +309,18 @@ async def analysis_message_to_chat(history: list, images, reference, request, ur
             search_words = data['message']['content']
         await search_from_net(search_words, collection)
     results = collection.query(query_texts=request, n_results=10)
-    result_reference = ''
+    result_reference = []
     if results and len(results['documents']) > 0:
         metadatas = results['metadatas']
         for distances, document in zip(results['distances'], results['documents']):
-            result_reference += ' '.join([text for distance, text in zip(distances, document) if distance > 0.5]) + '\n'
+            result_reference.extend([{'text':text} for distance, text in zip(distances, document) if distance > 0.5])
         if results['metadatas']:
             for metadatas in results['metadatas']:
                 result_urls.update([data['url'] for data in metadatas if data and data.get('url')])
-    if len(result_reference.strip()) > 0:
+    if len(result_reference) > 0:
         import datetime
-        history.append({'role': 'system', 'content': SEARCH_SYSTEM.format(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), result_reference)})
-        history.append({'role': 'user', 'content': request,"images": images if contains_image_flag else None})
+        history.append({'role': 'user', 'content': f'{SEARCH_SYSTEM.format(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'), json.dumps(result_reference,ensure_ascii=False))}\n{request}',
+                        "images": images if contains_image_flag else None})
     else:
         history.append({'role': 'user', 'content': f'{reference}\n{request}', "images": images if contains_image_flag else None})
     logger.debug('INFO', f"reference: {reference} request {request} urls {urls} images {len(images)}")
@@ -298,12 +330,39 @@ async def analysis_message_to_chat(history: list, images, reference, request, ur
     data = await chat_to_llm(model, history)
     if data:
         history.append(data['message'])
-        return f'{data['message']['content']}\n{f'引用:\n{'\n'.join(result_urls)}' if len(result_urls) > 0 else ""}'
+        msg=data['message']['content']
+        reply_reference=''
+        content=''
+        if msg.startswith('<think>') and msg.index('</think>') != -1:
+            index=msg.index('</think>')
+            think_content = msg[7:index]
+            content = msg[index+8:]
+            reply_reference += f'{think_content}\n'
+        else:
+            content=msg
+        if(len(result_urls)>0):
+            reply_reference+=f'引用:\n{'\n'.join(result_urls)}'
+        return content,reply_reference
     else:
-        return '模型调用失败'
+        return "请求超时，请稍后再试"
 
 
 async def chat_to_llm(model: str, message: list):
+    """
+    异步函数，用于与指定的语言模型进行交流。
+
+    参数:
+    - model: str, 指定使用的语言模型的名称。
+    - message: list, 包含交流信息的列表，通常是对话历史或相关的输入序列。
+
+    返回:
+    - resp, 从语言模型获取的响应，类型取决于返回值，通常为字符串或列表。
+    """
+    # 发送消息给指定的语言模型并等待响应
     resp = await plugin_config.llm.chat(message=message, model=model)
+    
+    # 记录调试信息，包括模型的响应内容
     logger.debug('INFO', f'resp {resp}')
+    
+    # 返回模型的响应
     return resp

@@ -83,7 +83,6 @@ async def got_weather(location: str = ArgPlainText()):
     await weather.send("正在查询中...")
     data = await http_invoke('https://geoapi.qweather.com/v2/city/lookup', headers={'Content-Type': 'application/json'},
                              params={'key': plugin_config.assistant_plugin_weather_api_key, 'location': location}, method='GET')
-    logger("debug", data)
     if data and any(key == 'location' for key in data.keys()):
         weather_location = await http_invoke('https://devapi.qweather.com/v7/weather/now', headers={'Content-Type': 'application/json'},
                                              params={'key': plugin_config.assistant_plugin_weather_api_key, 'location': data["location"][0]["id"]}, method='GET')
